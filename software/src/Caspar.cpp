@@ -1,125 +1,163 @@
 #include <Arduino.h>
-
-//#include <AFMotor.h>
 #include <Ps3Controller.h>
+#include <esp32-hal-ledc.h>
 
-//AF_DCMotor motor1(1, MOTOR12_1KHZ);
-//AF_DCMotor motor2(2, MOTOR12_1KHZ);
-//AF_DCMotor motor3(3, MOTOR34_1KHZ);
-//AF_DCMotor motor4(4, MOTOR34_1KHZ);
+typedef struct {
+  const uint8_t pin;
+  const uint8_t aBit;
+  const uint8_t bBit;
+} motor_t;
 
-// Wifi MAC: FC:F5:C4:01:A3:59
-//   BT MAC: FC:F5:C4:01:A3:5A
+// pin mappings for the dc motors of the old arduino motor shield
+// aBit and bBit are the positions of the direction bits in the 8 bit latch_state
+const motor_t motors[4] = {
+    {23, 2, 3},  // motor shield pin 11 <=> gpio 23 on ESP32, aBit, bBit
+    {25, 1, 4},  // motor shield pin  3 <=> gpio 25 on ESP32, aBit, bBit
+    {16, 5, 7},  // motor shield pin  5 <=> gpio 16 on ESP32, aBit, bBit
+    {27, 0, 6}   // motor shield pin  6 <=> gpio 27 on ESP32, aBit, bBit
+};
+
+#define MOTORLATCH 0
+#define MOTORCLK 1
+#define MOTORENABLE 2
+#define MOTORDATA 3
+
+// pin mappings for the 74HCT595 shift register
+const uint8_t latchPin[4] = {
+    19,  // motor latch (pin 12) <=> gpio 19 on ESP32
+    17,  // motor clk (pin 4)    <=> gpio 17 on ESP32
+    14,  // motor enable (pin 7) <=> gpio 14 on ESP32
+    12   // motod data (pin 8)   <=> gpio 12 on ESP32
+};
+
+static int8_t motorSpeed[4] = {0};
+static uint8_t latch_state = 0;
+
+void showData() {
+  Serial.print("left(");
+  Serial.print(Ps3.data.analog.stick.lx);
+  Serial.print(", ");
+  Serial.print(Ps3.data.analog.stick.ly);
+  Serial.print("); right(");
+  Serial.print(Ps3.data.analog.stick.rx);
+  Serial.print(", ");
+  Serial.print(Ps3.data.analog.stick.ry);
+  Serial.println(");");
+}
+
+static int battery = 0;
+
+void notify() {
+  if (battery != Ps3.data.status.battery) {
+    battery = Ps3.data.status.battery;
+    Serial.print("The controller battery is ");
+    if (battery == ps3_status_battery_charging)
+      Serial.println("charging");
+    else if (battery == ps3_status_battery_full)
+      Serial.println("FULL");
+    else if (battery == ps3_status_battery_high)
+      Serial.println("HIGH");
+    else if (battery == ps3_status_battery_low)
+      Serial.println("LOW");
+    else if (battery == ps3_status_battery_dying)
+      Serial.println("DYING");
+    else if (battery == ps3_status_battery_shutdown)
+      Serial.println("SHUTDOWN");
+    else
+      Serial.println("UNDEFINED");
+  }
+}
+
+void onConnect() {
+  Serial.println("Ps3 Controller connected.");
+}
+
+// motorNum  => dc motor[motorNum+1]
+// speed will be mapped as follows:
+// -32..31   => speed = 0
+// -128..-33 => speed = abs(speed) backwards
+// 32..127   => speed = speed forwards
+void setMotorSpeed(uint8_t motorNum, int8_t speed) {
+  // a and b bits are used to control the direction
+  // a = 0 b = 0 => release (allows passive movement)
+  // a = 1 b = 0 => forward
+  // a = 0 b = 1 => backward
+  // a = 1 b = 1 => freeze (no movement at all)
+  uint8_t a = motors[motorNum].aBit;
+  uint8_t b = motors[motorNum].bBit;
+  if (speed >= -32 && speed <= 31) {
+    // don't move
+    latch_state &= ~_BV(a);
+    latch_state &= ~_BV(b);
+  } else if (speed > 31) {
+    // forwards
+    latch_state |= _BV(a);
+    latch_state &= ~_BV(b);
+  } else if (speed < -32) {
+    // backwards
+    latch_state &= ~_BV(a);
+    latch_state |= _BV(b);
+  }
+  ledcWrite(motorNum, abs(speed));
+}
+
+void updateLatch() {
+  // the switch time of the 74HCT595 shift register is ~30ns
+  // the ESP32 can switch IOs with upto 80MHz (12.5ns)
+  // luckily, the digitalWrite method takes more than two cycles
+  // so the MOTORCLK bit shifting doesn't "swallow" bits
+  //LATCH_PORT &= ~_BV(LATCH);
+  digitalWrite(latchPin[MOTORLATCH], LOW);
+
+  //SER_PORT &= ~_BV(SER);
+  digitalWrite(latchPin[MOTORDATA], LOW);
+
+  for (uint8_t i = 0; i < 8; i++) {
+    //CLK_PORT &= ~_BV(CLK);
+    digitalWrite(latchPin[MOTORCLK], LOW);
+
+    if (latch_state & _BV(7 - i)) {
+      //SER_PORT |= _BV(SER);
+      digitalWrite(latchPin[MOTORDATA], HIGH);
+    } else {
+      //SER_PORT &= ~_BV(SER);
+      digitalWrite(latchPin[MOTORDATA], LOW);
+    }
+    //CLK_PORT |= _BV(CLK);
+    digitalWrite(latchPin[MOTORCLK], HIGH);
+  }
+  //LATCH_PORT |= _BV(LATCH);
+  digitalWrite(latchPin[MOTORLATCH], HIGH);
+}
 
 void setup() {
   Serial.begin(115200);
+  // init ps3 controller
+  Ps3.attach(notify);
+  Ps3.attachOnConnect(onConnect);
   Ps3.begin();
+
+  // init pwms for all 4 motors and the 4 shift register pins
+  for (uint8_t i = 0; i < 4; i++) {
+    // 880 Hz pwm signal with 7 bits resolution
+    ledcSetup(i, 880, 7);
+    ledcAttachPin(motors[i].pin, i);
+    // attach the shift register pins for the motor directions
+    pinMode(latchPin[i], OUTPUT);
+  }
+  latch_state = 0;
+
   Serial.println("Ready.");
 }
 
 void loop() {
-  if (Ps3.isConnected()) {
-    Serial.println("Connected!");
+  if (!Ps3.isConnected())
+    return;
+  for (uint8_t i = 0; i < 4; i++) {
+    motorSpeed[i] = Ps3.data.analog.stick.ly;
+    setMotorSpeed(i, motorSpeed[i]);
   }
-
-  delay(5000);
-  // put your main code here, to run repeatedly:
-  //long time_start = millis();
-
-  // read result
-  /*if (Mu.GetValue(VISION_BODY_DETECT, kStatus)) {                   // update vision result and get status, 0: undetected, other: detected
-    Serial.println("vision body detected:");
-    Serial.print("x = ");
-    Serial.println(Mu.GetValue(VISION_BODY_DETECT, kXValue));       // get vision result: x axes value
-    Serial.print("y = ");
-    Serial.println(Mu.GetValue(VISION_BODY_DETECT, kYValue));       // get vision result: y axes value
-    Serial.print("width = ");
-    Serial.println(Mu.GetValue(VISION_BODY_DETECT, kWidthValue));   // get vision result: width value
-    Serial.print("height = ");
-    Serial.println(Mu.GetValue(VISION_BODY_DETECT, kHeightValue));  // get vision result: height value
- 
-    
-    int xAxis = (Mu.GetValue(VISION_BODY_DETECT, kXValue));
-    int yAxis = (Mu.GetValue(VISION_BODY_DETECT, kYValue));
-    int distance = (Mu.GetValue(VISION_BODY_DETECT, kHeightValue));
-    
-
-    Serial.print("xAxis");
-    Serial.println(xAxis);
-    Serial.print("yAxis");
-    Serial.println(yAxis);
-    Serial.print("distance");
-    Serial.println(distance);
-   
-    if (xAxis < 35) {
-      motor1.setSpeed(140);
-      motor1.run(FORWARD);
-      motor2.setSpeed(140);
-      motor2.run(BACKWARD);
-      motor3.setSpeed(140);
-      motor3.run(FORWARD);
-      motor4.setSpeed(140);
-      motor4.run(BACKWARD);
-      //delay(10);
-      
-    }else if (xAxis > 65) {
-      motor1.setSpeed(140);
-      motor1.run(BACKWARD);
-      motor2.setSpeed(140);
-      motor2.run(FORWARD);
-      motor3.setSpeed(140);
-      motor3.run(BACKWARD);
-      motor4.setSpeed(140);
-      motor4.run(FORWARD);
-      //delay(10);
-      
-    }else if (distance < 30) {
-      motor1.setSpeed(130);
-      motor1.run(FORWARD);
-      motor2.setSpeed(130);
-      motor2.run(FORWARD);
-      motor3.setSpeed(130);
-      motor3.run(FORWARD);
-      motor4.setSpeed(130);
-      motor4.run(FORWARD);
-      //delay(10);
-
-    }else if (distance > 60) {
-      motor1.setSpeed(130);
-      motor1.run(BACKWARD);
-      motor2.setSpeed(130);
-      motor2.run(BACKWARD);
-      motor3.setSpeed(130);
-      motor3.run(BACKWARD);
-      motor4.setSpeed(130);
-      motor4.run(BACKWARD);
-      //delay(10);
-
-    }else{
-      motor1.setSpeed(0);
-      motor1.run(RELEASE);
-      motor2.setSpeed(0);
-      motor2.run(RELEASE);
-      motor3.setSpeed(0);
-      motor3.run(RELEASE);
-      motor4.setSpeed(0);
-      motor4.run(RELEASE);
-    }
-  
-    
-  } else {
-    Serial.println("vision body undetected.");
-     motor1.setSpeed(0);
-      motor1.run(RELEASE);
-      motor2.setSpeed(0);
-      motor2.run(RELEASE);
-      motor3.setSpeed(0);
-      motor3.run(RELEASE);
-      motor4.setSpeed(0);
-      motor4.run(RELEASE);
-  }
-  Serial.print("fps = ");
-  Serial.println(1000/(millis()-time_start));
-  Serial.println();*/
-  //delay(500);
+  updateLatch();
+  showData();
+  delay(50);
 }
