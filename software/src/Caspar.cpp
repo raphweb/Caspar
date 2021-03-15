@@ -13,8 +13,8 @@ typedef struct {
 const motor_t motors[4] = {
     {23, 2, 3},  // motor shield pin 11 <=> gpio 23 on ESP32, aBit, bBit
     {25, 1, 4},  // motor shield pin  3 <=> gpio 25 on ESP32, aBit, bBit
-    {16, 5, 7},  // motor shield pin  5 <=> gpio 16 on ESP32, aBit, bBit
-    {27, 0, 6}   // motor shield pin  6 <=> gpio 27 on ESP32, aBit, bBit
+    {27, 5, 7},  // motor shield pin  6 <=> gpio 27 on ESP32, aBit, bBit
+    {16, 0, 6}   // motor shield pin  5 <=> gpio 16 on ESP32, aBit, bBit
 };
 
 #define MOTORLATCH 0
