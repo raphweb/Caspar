@@ -12,6 +12,8 @@ typedef struct {
   int8_t spin_speed; // -127 -> -1 counter clockwise spin speed, 1 -> 127 clockwise spin speed
 } trajectory;
 
+static trajectory currentWish = {0, 0, 0};
+
 typedef struct {
   const uint8_t pin;
   const uint8_t aBit;
@@ -41,6 +43,10 @@ const uint8_t latchPin[4] = {
 };
 
 static uint8_t latch_state = 0;
+
+float lerp(float a, float b, float x) { 
+  return a + x * (b - a);
+}
 
 void showData() {
   Serial.print("left(");
@@ -109,14 +115,8 @@ void setMotorSpeed(uint8_t motorNum, int8_t speed) {
   }
   ledcWrite(motorNum, abs(speed));
 }
-float degree2rad(float degree){
-  return (degree * 71) / 4068;
-}
 
-
-
-
-trajectory readInput() {
+trajectory readInput(boolean interpolate) {
   // read in input from remote
   int8_t remote_input[3] = {
     Ps3.data.analog.stick.lx,
@@ -146,7 +146,15 @@ trajectory readInput() {
   // calc speed
   uint8_t speed = roundf(sqrtf(sq(mapped_input[0]) + sq(mapped_input[1])) * 2.0f);
   Serial.println("Angle: " + String(angle) + ", speed: " + String(speed));
-  return {speed, angle, remote_input[2]};
+  trajectory newWish = {speed, angle, remote_input[2]};
+  // interpolate if desired
+  if (interpolate) {
+    newWish.speed = lerp(currentWish.speed, newWish.speed, LERP_FACTOR);
+    newWish.angle = lerp(currentWish.angle, newWish.angle, LERP_FACTOR);
+    newWish.spin_speed = lerp(currentWish.spin_speed, newWish.spin_speed, LERP_FACTOR);
+    currentWish = newWish;
+  }
+  return newWish;
 }
 
 void drive(trajectory wish) {
@@ -158,25 +166,22 @@ void drive(trajectory wish) {
   // Left motor direction [+ - + -]
   // Right motor direction [- + - +]
 
-  float rad = degree2rad(wish.angle);
+  float rad = radians(wish.angle);
+  float radMinus90 = radians(wish.angle - 90);
 
-  uint8_t speed[4] ={0, 0, 0, 0};
+  float factor_a = sinf(radMinus90);
+  float factor_b = sinf(rad);
 
-  float factor_a = sin(rad - 90);
-  float factor_b = sin(rad);
+  uint8_t speed[4];
 
   speed[0] = wish.speed * factor_a;
   speed[1] = wish.speed * factor_b;
   speed[2] = wish.speed * factor_a;
   speed[3] = wish.speed * factor_b;
-  
-  setMotorSpeed(0, speed[0] * reverse_switch[0]);
-  setMotorSpeed(1, speed[1] * reverse_switch[1]);
-  setMotorSpeed(2, speed[2] * reverse_switch[2]);
-  setMotorSpeed(3, speed[3] * reverse_switch[3]);
+
+  for(uint8_t i = 0; i < 4; i++)  
+    setMotorSpeed(i, speed[i] * reverse_switch[i]);
 }
-
-
 
 void updateLatch() {
   // the switch time of the 74HCT595 shift register is ~30ns
@@ -228,14 +233,6 @@ void setup() {
   Serial.println("Ready.");
 }
 
-
-float lerp(float a, float b, float x)
-{ 
-  return a + x * (b - a);
-}
-
-int8_t motor_speed[4] = {0, 0, 0, 0};
-
 void loop() {
   //Check if controller is connected
   if (!Ps3.isConnected()){
@@ -248,26 +245,8 @@ void loop() {
     return;
   }
 
-  readInput();
-
-  // Read in input from remote
-  int8_t remote_speed[4] = {Ps3.data.analog.stick.lx,
-                            Ps3.data.analog.stick.ly,
-                            Ps3.data.analog.stick.rx,
-                            Ps3.data.analog.stick.ry}; 
-
-  for (uint8_t i = 0; i < 4; i++) {
-    motor_speed[i] = lerp(motor_speed[i], remote_speed[i], LERP_FACTOR);
-  }
-
-  /*
-  for (uint8_t i = 0; i < 4; i++) {
-    setMotorSpeed(i, motor_speed[1]);
-  }
-  */
-  
-  trajectory drive_straight = { 70, 0};
-  drive(drive_straight);
+  trajectory newWish = readInput(false);
+  drive(newWish);
   
   updateLatch();
   //showData();
