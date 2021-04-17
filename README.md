@@ -1,10 +1,3 @@
-[![Contributors][https://img.shields.io/badge/Maintained%3F-yes-green.svg]][https://github.com/net-attack/Caspar/graphs/contributors]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![MIT License][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]
-
 # Caspar
 ESP32 based omni-wheel car with remote control
 
