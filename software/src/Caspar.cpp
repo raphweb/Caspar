@@ -129,7 +129,6 @@ void drive(trajectory wish) {
   float rad = degree2rad(wish.angle);
 
   uint8_t speed[4] ={0, 0, 0, 0};
-  
 
   float factor_a = sin(rad - 90);
   float factor_b = sin(rad);
