@@ -16,7 +16,7 @@ These instructions will get you a copy of the project up and running on your loc
 
 1. Clone the repo
    ```sh
-   git clone https://github.com/net-attack/Caspar
+   git clone https://github.com/raphweb/Caspar
    ```
 1. Open Vs Code
 1. Open Platform IO and add Project
@@ -25,7 +25,7 @@ These instructions will get you a copy of the project up and running on your loc
 
 ## Roadmap
 
-See the [open issues](https://github.com/net-attack/Caspar/issues) for a list of proposed features (and known issues).
+See the [open issues](https://github.com/raphweb/Caspar/issues) for a list of proposed features (and known issues).
 
 ## Contributing
 
