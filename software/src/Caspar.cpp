@@ -136,6 +136,7 @@ void setup() {
   Ps3.attach(notify);
   Ps3.attachOnConnect(onConnect);
   Ps3.begin();
+  Serial.println("BT Address: " + Ps3.getAddress());
 
   // init pwms for all 4 motors and the 4 shift register pins
   for (uint8_t i = 0; i < 4; i++) {
