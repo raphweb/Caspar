@@ -1,4 +1,4 @@
-[![Contributors][contributors-shield]][https://github.com/net-attack/Caspar/graphs/contributors]
+[![Contributors][https://img.shields.io/badge/Maintained%3F-yes-green.svg]][https://github.com/net-attack/Caspar/graphs/contributors]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
