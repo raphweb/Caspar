@@ -30,7 +30,6 @@ const uint8_t latchPin[4] = {
     12   // motod data (pin 8)   <=> gpio 12 on ESP32
 };
 
-static int8_t motorSpeed[4] = {0};
 static uint8_t latch_state = 0;
 
 void showData() {
@@ -151,12 +150,27 @@ void setup() {
 }
 
 void loop() {
-  if (!Ps3.isConnected())
+  //Check if controller is connected
+  if (!Ps3.isConnected()){
+    // If no controller, die!
     return;
-  for (uint8_t i = 0; i < 4; i++) {
-    motorSpeed[i] = Ps3.data.analog.stick.ly;
-    setMotorSpeed(i, motorSpeed[i]);
   }
+
+  //Check if controller is charged
+  if ( Ps3.data.status.battery < ps3_status_battery_high ){
+    return;
+  }
+
+  // Read in input from remote
+  int8_t remote_speed[4] = {Ps3.data.analog.stick.lx,
+                            Ps3.data.analog.stick.ly,
+                            Ps3.data.analog.stick.rx,
+                            Ps3.data.analog.stick.ry}; 
+
+  for (uint8_t i = 0; i < 4; i++) {
+    setMotorSpeed(i, remote_speed[1]);
+  }
+
   updateLatch();
   showData();
   delay(50);
