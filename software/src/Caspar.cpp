@@ -180,8 +180,9 @@ void setup() {
 }
 
 
-float lerp(float a, float b, float c){
-  a = a + c * (b - a);
+float lerp(float a, float b, float x)
+{ 
+  return a + x * (b - a);
 }
 
 int8_t motor_speed[4] = {0, 0, 0, 0};
