@@ -3,7 +3,6 @@
 #include <esp32-hal-ledc.h>
 
 
-
 #define LERP_FACTOR 10
 
 #define FORWARD 0
@@ -12,8 +11,9 @@
 #define RIGHT 3
 
 typedef struct {
-  const uint8_t speed;
-  const uint16_t angle;
+  uint8_t speed;  // speed 0 -> 255 (0 == MIN; 255 == MAX)
+  uint16_t angle; // angle range in degree 0 -> 359
+  int8_t spin_speed; // -127 -> -1 counter clockwise spin speed, 1 -> 127 clockwise spin speed
 } trajectory;
 
 typedef struct {
@@ -85,7 +85,6 @@ void onConnect() {
   Serial.println("Ps3 Controller connected.");
 }
 
-
 // motorNum  => dc motor[motorNum+1]
 // speed will be mapped as follows:
 // -32..31   => speed = 0
@@ -113,6 +112,39 @@ void setMotorSpeed(uint8_t motorNum, int8_t speed) {
     latch_state |= _BV(b);
   }
   ledcWrite(motorNum, abs(speed));
+}
+
+trajectory readInput() {
+  // read in input from remote
+  int8_t remote_input[3] = {
+    Ps3.data.analog.stick.lx,
+    Ps3.data.analog.stick.ly,
+    Ps3.data.analog.stick.rx // right hand analog stick x axis used for spin
+  };
+  // increment negative values, so we have two zero positions
+  for (uint8_t i = 0; i < 3; i++) {
+    if (remote_input[i] < 0) remote_input[i]++;
+  }
+  // calc angle
+  uint16_t angle;
+  if (remote_input[0] != 0 || remote_input[1] != 0) {
+    angle = (uint16_t)(degrees(atan2f(-remote_input[0], remote_input[1])) + 180) % 360;
+  } else {
+    angle = 0;
+  }
+  // calculate the mapped values from a square to a circle
+  // see: https://mathproofs.blogspot.com/2005/07/mapping-square-to-circle.html
+  // division by 32258 normalizes remote input to [0.0f..1.0f], squares it, and divides it by 2
+  // i.e.: 32258 == 127 * 127 * 2
+  // map square area values to circualr ones
+  float mapped_input[2] = {
+    sqrtf(1.0f - sq(remote_input[1]) / 32258.0f) * remote_input[0],
+    sqrtf(1.0f - sq(remote_input[0]) / 32258.0f) * remote_input[1]
+  };
+  // calc speed
+  uint8_t speed = roundf(sqrtf(sq(mapped_input[0]) + sq(mapped_input[1])) * 2.0f);
+  Serial.println("Angle: " + String(angle) + ", speed: " + String(speed));
+  return {speed, angle, remote_input[2]};
 }
 
 void drive(trajectory wish) {
@@ -199,6 +231,8 @@ void loop() {
     return;
   }
 
+  readInput();
+
   // Read in input from remote
   int8_t remote_speed[4] = {Ps3.data.analog.stick.lx,
                             Ps3.data.analog.stick.ly,
@@ -214,6 +248,6 @@ void loop() {
   }
 
   updateLatch();
-  showData();
+  //showData();
   delay(50);
 }
