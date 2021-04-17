@@ -2,6 +2,20 @@
 #include <Ps3Controller.h>
 #include <esp32-hal-ledc.h>
 
+
+
+#define LERP_FACTOR 10
+
+#define FORWARD 0
+#define BACKWARD 1
+#define LEFT 2
+#define RIGHT 3
+
+typedef struct {
+  const uint8_t speed;
+  const uint16_t angle;
+} trajectory;
+
 typedef struct {
   const uint8_t pin;
   const uint8_t aBit;
@@ -71,6 +85,7 @@ void onConnect() {
   Serial.println("Ps3 Controller connected.");
 }
 
+
 // motorNum  => dc motor[motorNum+1]
 // speed will be mapped as follows:
 // -32..31   => speed = 0
@@ -99,6 +114,20 @@ void setMotorSpeed(uint8_t motorNum, int8_t speed) {
   }
   ledcWrite(motorNum, abs(speed));
 }
+
+void drive(trajectory wish) {
+  // Angle Range in degree 0 -> 359
+  // Speed 0 --> 255 
+  // 0 is stop 
+  // Forward motor direction [+ + + +]
+  // Backward motor direction [- - - -]
+  //  motor direction [+ + + +]
+  // Forward motor direction [+ + + +]
+
+
+}
+
+
 
 void updateLatch() {
   // the switch time of the 74HCT595 shift register is ~30ns
@@ -150,6 +179,13 @@ void setup() {
   Serial.println("Ready.");
 }
 
+
+float lerp(float a, float b, float c){
+  a = a + c * (b - a);
+}
+
+int8_t motor_speed[4] = {0, 0, 0, 0};
+
 void loop() {
   //Check if controller is connected
   if (!Ps3.isConnected()){
@@ -167,6 +203,10 @@ void loop() {
                             Ps3.data.analog.stick.ly,
                             Ps3.data.analog.stick.rx,
                             Ps3.data.analog.stick.ry}; 
+
+  for (uint8_t i = 0; i < 4; i++) {
+    motor_speed[i] = lerp(motor_speed[i], remote_speed[i], LERP_FACTOR);
+  }
 
   for (uint8_t i = 0; i < 4; i++) {
     setMotorSpeed(i, remote_speed[1]);
