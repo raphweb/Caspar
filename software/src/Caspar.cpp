@@ -4,12 +4,8 @@
 
 
 #define LERP_FACTOR 10
-
-#define FORWARD 0
-#define BACKWARD 1
-#define LEFT 2
-#define RIGHT 3
-
+uint8_t reverse_switch[4] = {1, 1, 1, 1}; //Toggle if you want the engine direction reversed
+  
 typedef struct {
   uint8_t speed;  // speed 0 -> 255 (0 == MIN; 255 == MAX)
   uint16_t angle; // angle range in degree 0 -> 359
@@ -113,6 +109,12 @@ void setMotorSpeed(uint8_t motorNum, int8_t speed) {
   }
   ledcWrite(motorNum, abs(speed));
 }
+float degree2rad(float degree){
+  return (degree * 71) / 4068;
+}
+
+
+
 
 trajectory readInput() {
   // read in input from remote
@@ -153,10 +155,25 @@ void drive(trajectory wish) {
   // 0 is stop 
   // Forward motor direction [+ + + +]
   // Backward motor direction [- - - -]
-  //  motor direction [+ + + +]
-  // Forward motor direction [+ + + +]
+  // Left motor direction [+ - + -]
+  // Right motor direction [- + - +]
 
+  float rad = degree2rad(wish.angle);
 
+  uint8_t speed[4] ={0, 0, 0, 0};
+
+  float factor_a = sin(rad - 90);
+  float factor_b = sin(rad);
+
+  speed[0] = wish.speed * factor_a;
+  speed[1] = wish.speed * factor_b;
+  speed[2] = wish.speed * factor_a;
+  speed[3] = wish.speed * factor_b;
+  
+  setMotorSpeed(0, speed[0] * reverse_switch[0]);
+  setMotorSpeed(1, speed[1] * reverse_switch[1]);
+  setMotorSpeed(2, speed[2] * reverse_switch[2]);
+  setMotorSpeed(3, speed[3] * reverse_switch[3]);
 }
 
 
@@ -243,10 +260,15 @@ void loop() {
     motor_speed[i] = lerp(motor_speed[i], remote_speed[i], LERP_FACTOR);
   }
 
+  /*
   for (uint8_t i = 0; i < 4; i++) {
-    setMotorSpeed(i, remote_speed[1]);
+    setMotorSpeed(i, motor_speed[1]);
   }
-
+  */
+  
+  trajectory drive_straight = { 70, 0};
+  drive(drive_straight);
+  
   updateLatch();
   //showData();
   delay(50);
