@@ -4,10 +4,10 @@
 
 
 #define LERP_FACTOR 10
-uint8_t reverse_switch[4] = {1, 1, 1, 1}; //Toggle if you want the engine direction reversed
+int8_t motor_direction[4] = {-1, -1, -1, -1}; //Toggle if you want the engine direction reversed
   
 typedef struct {
-  uint8_t speed;  // speed 0 -> 255 (0 == MIN; 255 == MAX)
+  uint8_t speed;  // speed 0 -> 127 (0 == MIN; 127 == MAX)
   uint16_t angle; // angle range in degree 0 -> 359
   int8_t spin_speed; // -127 -> -1 counter clockwise spin speed, 1 -> 127 clockwise spin speed
 } trajectory;
@@ -144,7 +144,7 @@ trajectory readInput(boolean interpolate) {
     sqrtf(1.0f - sq(remote_input[0]) / 32258.0f) * remote_input[1]
   };
   // calc speed
-  uint8_t speed = roundf(sqrtf(sq(mapped_input[0]) + sq(mapped_input[1])) * 2.0f);
+  uint8_t speed = roundf(sqrtf(sq(mapped_input[0]) + sq(mapped_input[1])));
   Serial.println("Angle: " + String(angle) + ", speed: " + String(speed));
   trajectory newWish = {speed, angle, remote_input[2]};
   // interpolate if desired
@@ -158,29 +158,43 @@ trajectory readInput(boolean interpolate) {
 }
 
 void drive(trajectory wish) {
-  // Angle Range in degree 0 -> 359
-  // Speed 0 --> 255 
-  // 0 is stop 
-  // Forward motor direction [+ + + +]
-  // Backward motor direction [- - - -]
-  // Left motor direction [+ - + -]
-  // Right motor direction [- + - +]
+  /* Angle Range in degree 0 -> 359
+   * Speed 0 --> 127
+   * 0 is stop
+   * 
+   * Schematic looks like this:
+   * 
+   *  \\\\\   front   /////
+   *  \ 2 \-----------/ 1 /
+   *  \\\\\ |       | /////
+   *        |       |
+   *        |       |
+   *        |       |
+   *  ///// |       | \\\\\
+   *  / 3 /-----------\ 4 \
+   *  /////           \\\\\
+   * 
+   * See: https://www.roboteq.com/applications/all-blogs/5-driving-mecanum-wheels-omnidirectional-robots#section-id-1567079947618
+   * Wheel 1 and 2 are switched. Other than that it's the same algorithm.
+   */
 
-  float rad = radians(wish.angle);
-  float radMinus90 = radians(wish.angle - 90);
+  float angleRad = radians((float)wish.angle + 45.0f);
+  float spinSpeed = (float)wish.spin_speed / 127.0f;
 
-  float factor_a = sinf(radMinus90);
-  float factor_b = sinf(rad);
+  float fSpeed[4];
+  fSpeed[0] = cosf(angleRad) - spinSpeed;
+  fSpeed[1] = sinf(angleRad) + spinSpeed;
+  fSpeed[2] = cosf(angleRad) + spinSpeed;
+  fSpeed[3] = sinf(angleRad) - spinSpeed;
 
-  uint8_t speed[4];
+  // limit min and max values
+  int8_t iSpeed[4];
+  for(uint8_t i = 0; i < 4; i++)
+    iSpeed[i] = roundf(max(min(wish.speed * fSpeed[i], 127.0f), -127.0f));
 
-  speed[0] = wish.speed * factor_a;
-  speed[1] = wish.speed * factor_b;
-  speed[2] = wish.speed * factor_a;
-  speed[3] = wish.speed * factor_b;
-
+  // set speeds
   for(uint8_t i = 0; i < 4; i++)  
-    setMotorSpeed(i, speed[i] * reverse_switch[i]);
+    setMotorSpeed(i, iSpeed[i] * motor_direction[i]);
 }
 
 void updateLatch() {
